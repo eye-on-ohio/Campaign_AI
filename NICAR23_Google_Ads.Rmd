@@ -1,0 +1,139 @@
+---
+title: "Looking at Dark Money on Google ads"
+author: "Lucia Walinchus"
+date: "2/13/23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(lubridate) 
+library(ggplot2)
+library(stringr)
+library(request)
+library(rjson)
+library(jsonlite)
+
+```
+To see the NICAR23 lightning talk slides that go with this code: https://www.canva.com/design/DAFadwFejCc/F76uoFFxfV2do05pyU1IaA/view?utm_content=DAFadwFejCc&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+
+
+##Step one: Get the ads
+
+Here's the documentation for getting political ads on Google: https://console.cloud.google.com/marketplace/details/transparency-report/google-political-ads
+
+
+##Step 2: You will need to set up a google cloud account 
+Start here: https://cloud.google.com
+
+##Step 3: "Click "Use Big Query" on the documentation page
+See the GCP Marketplace listing for more details and sample queries: https://console.cloud.google.com/marketplace/details/transparency-report/google-political-ads
+
+##Step 4: Here is the SQL to get all the data for one area: 
+standardSQL
+SELECT *
+FROM
+  `bigquery-public-data.google_political_ads.creative_stats` AS CS
+WHERE
+CS.date_range_end >"2022-07-31" AND #Or whatever date you want to limit it to
+  REGEXP_CONTAINS
+  (CS.geo_targeting_included,
+    r"Ohio") #Or wherever you want to get data
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29, 30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46 #They have 46 categories, you can mess with them but most are just the info in one area or another 
+
+
+##Step 5: Import the data to R
+
+```{r}
+Ohio_Search_Ads <- rio::import("Ohio_Political_Ads_Aug_22_to_Feb_23.csv") #Or whatever your filename is 
+```
+
+
+It looks like they all include the word Ohio in the geo targeting, but some include certain parts of Ohio and some include Ohio among their several states. So "45750,Ohio,United States, Marietta,Ohio,United States" versus Ohio among other states so here we have to specfically exclude other states. 
+```{r}
+Ohio_Search_Ads <- Ohio_Search_Ads %>% 
+  #filter(geo_targeting_included=="Ohio,United States, United States")
+  filter(!str_detect(geo_targeting_included,"Alabama")) %>% 
+  filter(!str_detect(geo_targeting_included,"Alaska")) %>%
+  filter(!str_detect(geo_targeting_included,"Arizona")) %>%
+  filter(!str_detect(geo_targeting_included,"Arkansas")) %>%
+  filter(!str_detect(geo_targeting_included,"California")) %>%
+  filter(!str_detect(geo_targeting_included,"Colorado")) %>%
+  filter(!str_detect(geo_targeting_included,"Connecticut")) %>%
+  filter(!str_detect(geo_targeting_included,"Delaware")) %>%
+  filter(!str_detect(geo_targeting_included,"Florida")) %>%
+  filter(!str_detect(geo_targeting_included,"Georgia")) %>%
+  filter(!str_detect(geo_targeting_included,"Hawaii")) %>%
+  filter(!str_detect(geo_targeting_included,"Idaho")) %>%
+  filter(!str_detect(geo_targeting_included,"Illinois")) %>%
+  filter(!str_detect(geo_targeting_included,"Indiana")) %>%
+  filter(!str_detect(geo_targeting_included,"Iowa")) %>%
+  filter(!str_detect(geo_targeting_included,"Kansas")) %>%
+  filter(!str_detect(geo_targeting_included,"Kentucky")) %>%
+  filter(!str_detect(geo_targeting_included,"Louisiana")) %>%
+  filter(!str_detect(geo_targeting_included,"Maine")) %>%
+  filter(!str_detect(geo_targeting_included,"Maryland")) %>%
+  filter(!str_detect(geo_targeting_included,"Massachusetts")) %>%
+  filter(!str_detect(geo_targeting_included,"Michigan")) %>%
+  filter(!str_detect(geo_targeting_included,"Minnesota")) %>%
+  filter(!str_detect(geo_targeting_included,"Mississippi")) %>%
+  filter(!str_detect(geo_targeting_included,"Missouri")) %>%
+  filter(!str_detect(geo_targeting_included,"Montana")) %>%
+  filter(!str_detect(geo_targeting_included,"Nebraska")) %>%
+  filter(!str_detect(geo_targeting_included,"Nevada")) %>%
+  filter(!str_detect(geo_targeting_included,"New Hampshire")) %>%
+  filter(!str_detect(geo_targeting_included,"New Jersey")) %>%
+  filter(!str_detect(geo_targeting_included,"New York")) %>%
+  filter(!str_detect(geo_targeting_included,"North Carolina")) %>%
+  filter(!str_detect(geo_targeting_included,"North Dakota")) %>%
+  filter(!str_detect(geo_targeting_included,"Oklahoma")) %>%
+  filter(!str_detect(geo_targeting_included,"Oregon")) %>%
+  filter(!str_detect(geo_targeting_included,"Pennsylvania")) %>%
+filter(!str_detect(geo_targeting_included,"Rhode Island")) %>%
+  filter(!str_detect(geo_targeting_included,"South Carolina")) %>%
+filter(!str_detect(geo_targeting_included,"South Dakota")) %>%
+  filter(!str_detect(geo_targeting_included,"Tennessee")) %>%
+filter(!str_detect(geo_targeting_included,"Texas")) %>%
+  filter(!str_detect(geo_targeting_included,"Utah")) %>%
+filter(!str_detect(geo_targeting_included,"Vermont")) %>%
+  filter(!str_detect(geo_targeting_included,"Virginia")) %>%
+  filter(!str_detect(geo_targeting_included,"Washington")) %>%
+  filter(!str_detect(geo_targeting_included,"West Virginia")) %>%
+  filter(!str_detect(geo_targeting_included,"Wisconsin")) %>%
+  filter(!str_detect(geo_targeting_included,"Wyoming"))
+```
+
+
+Who advertised and targeted Ohio in that timeframe? 
+
+```{r}
+sort(unique(Ohio_Search_Ads$advertiser_name))
+```
+
+Who spent the most money?
+
+```{r}
+most_money <- Ohio_Search_Ads %>% group_by(advertiser_name) %>% summarize(Max_Spent=sum(spend_range_max_usd))
+DT::datatable(most_money)
+```
+
+What were the top ads? 
+
+```{r}
+library(splitstackshape)
+
+Ohio_Search_Ads <-  cSplit(Ohio_Search_Ads, "impressions",  sep = "-",type.convert = TRUE)
+
+Ohio_Search_Ads <- Ohio_Search_Ads %>% 
+  mutate(impressions_min=if_else(impressions_1=="≥10000000",10000000,as.numeric(impressions_1))) %>% 
+  mutate(impressions_max=if_else(is.na(impressions_2),10000000,as.numeric(impressions_2)))
+ 
+ 
+impressions <-  Ohio_Search_Ads %>% group_by(advertiser_name) %>% summarize(Max_Impressions=sum(impressions_max), Min_Impressions=sum(impressions_min),swing=(Max_Impressions-Min_Impressions))
+
+DT::datatable(impressions)
+                                                                                 
+```
+
